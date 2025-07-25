@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Settings as SettingsIcon, Users, RefreshCw, Shield } from 'lucide-react';
+import { Settings as SettingsIcon, Users, RefreshCw, Shield, ArrowLeft, Home } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import UserManagement from './UserManagement';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -28,11 +29,30 @@ const Settings = () => {
 
   return (
     <div className="max-w-6xl mx-auto">
+      {/* Breadcrumb Navigation */}
+      <nav className="flex items-center space-x-2 text-sm text-gray-500 mb-4">
+        <Link to="/browse/" className="flex items-center hover:text-gray-700">
+          <Home className="h-4 w-4 mr-1" />
+          File Browser
+        </Link>
+        <span>/</span>
+        <span className="text-gray-900 font-medium">Settings</span>
+      </nav>
+
       <div className="bg-white shadow rounded-lg">
         <div className="px-4 py-5 sm:p-6">
-          <div className="flex items-center mb-6">
-            <Shield className="h-6 w-6 text-purple-600 mr-2" />
-            <h1 className="text-2xl font-bold text-gray-900">Admin Settings</h1>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center">
+              <Shield className="h-6 w-6 text-purple-600 mr-2" />
+              <h1 className="text-2xl font-bold text-gray-900">Admin Settings</h1>
+            </div>
+            <Link
+              to="/browse/"
+              className="flex items-center space-x-2 px-3 py-2 text-gray-600 hover:text-gray-900 border border-gray-300 rounded-md hover:border-gray-400 transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back to Files</span>
+            </Link>
           </div>
 
           {/* Tab Navigation */}
