@@ -22,6 +22,8 @@ type FileInfo struct {
 	IsDir        bool      `json:"isDir"`
 	Extension    string    `json:"extension"`
 	RelativePath string    `json:"relativePath"`
+	IsSymlink    bool      `json:"isSymlink"`
+	LinkTarget   string    `json:"linkTarget,omitempty"`
 }
 
 type FileIndex struct {
@@ -95,6 +97,69 @@ func main() {
 	log.Fatal(r.Run(":" + port))
 }
 
+// getFileInfo handles symlinks properly by checking if it's a symlink first,
+// then getting the target info if it is
+func getFileInfo(path string, name string, relativePath string) (FileInfo, error) {
+	// Use Lstat to get info about the link itself (not the target)
+	lstat, err := os.Lstat(path)
+	if err != nil {
+		return FileInfo{}, err
+	}
+
+	fileInfo := FileInfo{
+		Name:         name,
+		Path:         path,
+		RelativePath: relativePath,
+		IsSymlink:    lstat.Mode()&os.ModeSymlink != 0,
+	}
+
+	if fileInfo.IsSymlink {
+		// Get the target of the symlink
+		target, err := os.Readlink(path)
+		if err != nil {
+			// If we can't read the link, treat it as a broken symlink
+			fileInfo.LinkTarget = "broken symlink"
+			fileInfo.Size = 0
+			fileInfo.ModTime = lstat.ModTime()
+			fileInfo.IsDir = false
+			fileInfo.Extension = ""
+			return fileInfo, nil
+		}
+
+		fileInfo.LinkTarget = target
+
+		// Now get info about the target
+		stat, err := os.Stat(path)
+		if err != nil {
+			// Broken symlink - use lstat info
+			fileInfo.LinkTarget = target + " (broken)"
+			fileInfo.Size = 0
+			fileInfo.ModTime = lstat.ModTime()
+			fileInfo.IsDir = false
+			fileInfo.Extension = ""
+			return fileInfo, nil
+		}
+
+		// Use target's properties
+		fileInfo.Size = stat.Size()
+		fileInfo.ModTime = stat.ModTime()
+		fileInfo.IsDir = stat.IsDir()
+		if !stat.IsDir() {
+			fileInfo.Extension = strings.ToLower(filepath.Ext(name))
+		}
+	} else {
+		// Regular file or directory
+		fileInfo.Size = lstat.Size()
+		fileInfo.ModTime = lstat.ModTime()
+		fileInfo.IsDir = lstat.IsDir()
+		if !lstat.IsDir() {
+			fileInfo.Extension = strings.ToLower(filepath.Ext(name))
+		}
+	}
+
+	return fileInfo, nil
+}
+
 func (s *Server) buildIndex() {
 	index := &FileIndex{
 		Files:       make([]FileInfo, 0),
@@ -112,21 +177,16 @@ func (s *Server) buildIndex() {
 			return nil // Skip root directory
 		}
 
-		fileInfo := FileInfo{
-			Name:         info.Name(),
-			Path:         path,
-			Size:         info.Size(),
-			ModTime:      info.ModTime(),
-			IsDir:        info.IsDir(),
-			Extension:    strings.ToLower(filepath.Ext(info.Name())),
-			RelativePath: relativePath,
+		fileInfo, err := getFileInfo(path, info.Name(), relativePath)
+		if err != nil {
+			return nil // Skip files with errors
 		}
 
-		if info.IsDir() {
+		if fileInfo.IsDir {
 			index.Directories = append(index.Directories, fileInfo)
 		} else {
 			index.Files = append(index.Files, fileInfo)
-			index.TotalSize += info.Size()
+			index.TotalSize += fileInfo.Size
 		}
 
 		return nil
@@ -184,21 +244,14 @@ func (s *Server) browsePath(c *gin.Context) {
 
 	var files []FileInfo
 	for _, entry := range entries {
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
 		relativePath := filepath.Join(requestPath, entry.Name())
-		fileInfo := FileInfo{
-			Name:         entry.Name(),
-			Path:         filepath.Join(fullPath, entry.Name()),
-			Size:         info.Size(),
-			ModTime:      info.ModTime(),
-			IsDir:        entry.IsDir(),
-			Extension:    strings.ToLower(filepath.Ext(entry.Name())),
-			RelativePath: relativePath,
+		entryPath := filepath.Join(fullPath, entry.Name())
+		
+		fileInfo, err := getFileInfo(entryPath, entry.Name(), relativePath)
+		if err != nil {
+			continue // Skip files with errors
 		}
+		
 		files = append(files, fileInfo)
 	}
 

@@ -10,7 +10,8 @@ import {
   Archive,
   Video,
   Music,
-  Code
+  Code,
+  Link
 } from 'lucide-react';
 
 const FileList = ({ files, viewMode, onNavigate, onFileAction, currentPath }) => {
@@ -18,28 +19,39 @@ const FileList = ({ files, viewMode, onNavigate, onFileAction, currentPath }) =>
   const [newName, setNewName] = useState('');
 
   const getFileIcon = (file) => {
-    if (file.isDir) return <FolderOpen className="w-5 h-5 text-blue-500" />;
+    let baseIcon;
     
-    const ext = file.extension.toLowerCase();
-    if (['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg'].includes(ext)) {
-      return <Image className="w-5 h-5 text-green-500" />;
+    if (file.isDir) {
+      baseIcon = <FolderOpen className="w-5 h-5 text-blue-500" />;
+    } else {
+      const ext = file.extension.toLowerCase();
+      if (['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg'].includes(ext)) {
+        baseIcon = <Image className="w-5 h-5 text-green-500" />;
+      } else if (['.txt', '.md', '.doc', '.docx', '.pdf'].includes(ext)) {
+        baseIcon = <FileText className="w-5 h-5 text-gray-500" />;
+      } else if (['.zip', '.rar', '.7z', '.tar', '.gz'].includes(ext)) {
+        baseIcon = <Archive className="w-5 h-5 text-orange-500" />;
+      } else if (['.mp4', '.avi', '.mkv', '.mov', '.wmv'].includes(ext)) {
+        baseIcon = <Video className="w-5 h-5 text-purple-500" />;
+      } else if (['.mp3', '.wav', '.flac', '.aac', '.ogg'].includes(ext)) {
+        baseIcon = <Music className="w-5 h-5 text-pink-500" />;
+      } else if (['.js', '.ts', '.jsx', '.tsx', '.py', '.go', '.java', '.cpp', '.c', '.html', '.css'].includes(ext)) {
+        baseIcon = <Code className="w-5 h-5 text-indigo-500" />;
+      } else {
+        baseIcon = <File className="w-5 h-5 text-gray-400" />;
+      }
     }
-    if (['.txt', '.md', '.doc', '.docx', '.pdf'].includes(ext)) {
-      return <FileText className="w-5 h-5 text-gray-500" />;
+
+    if (file.isSymlink) {
+      return (
+        <div className="relative inline-block">
+          {baseIcon}
+          <Link className="absolute -bottom-1 -right-1 w-3 h-3 text-blue-600 bg-white rounded-full p-0.5" />
+        </div>
+      );
     }
-    if (['.zip', '.rar', '.7z', '.tar', '.gz'].includes(ext)) {
-      return <Archive className="w-5 h-5 text-orange-500" />;
-    }
-    if (['.mp4', '.avi', '.mkv', '.mov', '.wmv'].includes(ext)) {
-      return <Video className="w-5 h-5 text-purple-500" />;
-    }
-    if (['.mp3', '.wav', '.flac', '.aac', '.ogg'].includes(ext)) {
-      return <Music className="w-5 h-5 text-pink-500" />;
-    }
-    if (['.js', '.ts', '.jsx', '.tsx', '.py', '.go', '.java', '.cpp', '.c', '.html', '.css'].includes(ext)) {
-      return <Code className="w-5 h-5 text-indigo-500" />;
-    }
-    return <File className="w-5 h-5 text-gray-400" />;
+
+    return baseIcon;
   };
 
   const formatFileSize = (bytes) => {
@@ -125,9 +137,16 @@ const FileList = ({ files, viewMode, onNavigate, onFileAction, currentPath }) =>
                   autoFocus
                 />
               ) : (
-                <p className="text-sm font-medium text-gray-900 truncate" title={file.name}>
-                  {file.name}
-                </p>
+                <div className="text-center">
+                  <p className="text-sm font-medium text-gray-900 truncate" title={file.name}>
+                    {file.name}
+                  </p>
+                  {file.isSymlink && file.linkTarget && (
+                    <p className="text-xs text-blue-600 truncate mt-1" title={`→ ${file.linkTarget}`}>
+                      → {file.linkTarget}
+                    </p>
+                  )}
+                </div>
               )}
               {!file.isDir && (
                 <p className="text-xs text-gray-500 mt-1">
@@ -204,14 +223,21 @@ const FileList = ({ files, viewMode, onNavigate, onFileAction, currentPath }) =>
                         autoFocus
                       />
                     ) : (
-                      <span
-                        className={`text-sm font-medium text-gray-900 ${
-                          file.isDir ? 'cursor-pointer hover:text-blue-600' : ''
-                        }`}
-                        onClick={() => handleClick(file)}
-                      >
-                        {file.name}
-                      </span>
+                      <div>
+                        <span
+                          className={`text-sm font-medium text-gray-900 ${
+                            file.isDir ? 'cursor-pointer hover:text-blue-600' : ''
+                          }`}
+                          onClick={() => handleClick(file)}
+                        >
+                          {file.name}
+                        </span>
+                        {file.isSymlink && file.linkTarget && (
+                          <div className="text-xs text-blue-600 mt-1" title={`Symlink target: ${file.linkTarget}`}>
+                            → {file.linkTarget}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
