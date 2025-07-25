@@ -1,9 +1,9 @@
 import React from 'react';
-import { RefreshCw, HardDrive, FileText, FolderOpen, Users, LogOut, User } from 'lucide-react';
+import { HardDrive, FileText, FolderOpen, Settings, LogOut, User } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
-const Header = ({ index, onRebuildIndex }) => {
+const Header = ({ index }) => {
   const { user, logout, isAdmin } = useAuth();
   const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 B';
@@ -51,22 +51,14 @@ const Header = ({ index, onRebuildIndex }) => {
               </div>
             )}
             
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={onRebuildIndex}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <RefreshCw className="w-4 h-4" />
-                <span>Rebuild Index</span>
-              </button>
-
+            <div className="flex items-center space-x-4">
               {isAdmin && (
                 <Link
-                  to="/users"
+                  to="/settings"
                   className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
                 >
-                  <Users className="w-4 h-4" />
-                  <span>Users</span>
+                  <Settings className="w-4 h-4" />
+                  <span>Settings</span>
                 </Link>
               )}
 

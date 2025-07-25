@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import FileBrowser from './components/FileBrowser';
 import Header from './components/Header';
 import Login from './components/Login';
-import UserManagement from './components/UserManagement';
+import Settings from './components/Settings';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
@@ -28,14 +28,6 @@ const AuthenticatedApp = () => {
     }
   };
 
-  const rebuildIndex = async () => {
-    try {
-      await apiRequest('/api/index/rebuild', { method: 'POST' });
-      await fetchIndex();
-    } catch (error) {
-      console.error('Failed to rebuild index:', error);
-    }
-  };
 
   if (loading) {
     return (
@@ -50,7 +42,7 @@ const AuthenticatedApp = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header index={index} onRebuildIndex={rebuildIndex} />
+      <Header index={index} />
       <main className="container mx-auto px-4 py-6">
         <Routes>
           <Route 
@@ -62,10 +54,10 @@ const AuthenticatedApp = () => {
             } 
           />
           <Route 
-            path="/users" 
+            path="/settings" 
             element={
               <ProtectedRoute requireAdmin={true}>
-                <UserManagement />
+                <Settings />
               </ProtectedRoute>
             } 
           />
