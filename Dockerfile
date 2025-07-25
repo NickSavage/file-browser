@@ -12,14 +12,15 @@ RUN npm run build
 FROM golang:1.21-alpine AS go-builder
 
 WORKDIR /app
-COPY go.mod ./
+COPY go.mod go.sum ./
+RUN go mod download
 COPY *.go ./
-RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
 # Final stage
 FROM alpine:latest
 
+# Install ca-certificates
 RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
@@ -35,6 +36,8 @@ RUN mkdir -p /data
 # Set environment variables
 ENV SERVE_DIR=/data
 ENV PORT=8080
+ENV JWT_SECRET=change-this-in-production
+ENV ADMIN_PASSWORD=admin123
 
 # Expose port
 EXPOSE 8080

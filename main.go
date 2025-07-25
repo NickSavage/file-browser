@@ -7,12 +7,44 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v4"
+	"golang.org/x/crypto/bcrypt"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
+
+type User struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	Username  string    `json:"username" gorm:"unique;not null"`
+	Password  string    `json:"-" gorm:"not null"`
+	IsAdmin   bool      `json:"isAdmin" gorm:"default:false"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type LoginRequest struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+type CreateUserRequest struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required,min=6"`
+	IsAdmin  bool   `json:"isAdmin"`
+}
+
+type Claims struct {
+	UserID   uint   `json:"userId"`
+	Username string `json:"username"`
+	IsAdmin  bool   `json:"isAdmin"`
+	jwt.RegisteredClaims
+}
 
 type FileInfo struct {
 	Name         string    `json:"name"`
@@ -37,6 +69,8 @@ type FileIndex struct {
 type Server struct {
 	ServeDir string
 	Index    *FileIndex
+	DB       *gorm.DB
+	JWTKey   []byte
 }
 
 func main() {
@@ -45,9 +79,33 @@ func main() {
 		serveDir = "./data"
 	}
 
+	// Initialize database
+	db, err := gorm.Open(sqlite.Open("filebrowser.db"), &gorm.Config{})
+	if err != nil {
+		log.Fatal("Failed to connect to database:", err)
+	}
+
+	// Auto-migrate the schema
+	err = db.AutoMigrate(&User{})
+	if err != nil {
+		log.Fatal("Failed to migrate database:", err)
+	}
+
+	// JWT secret key
+	jwtKey := []byte(os.Getenv("JWT_SECRET"))
+	if len(jwtKey) == 0 {
+		jwtKey = []byte("your-secret-key-change-in-production")
+		log.Println("Warning: Using default JWT secret. Set JWT_SECRET environment variable in production.")
+	}
+
 	server := &Server{
 		ServeDir: serveDir,
+		DB:       db,
+		JWTKey:   jwtKey,
 	}
+
+	// Create default admin user if none exists
+	server.createDefaultAdmin()
 
 	// Build initial index
 	log.Printf("Indexing directory: %s", serveDir)
@@ -73,14 +131,28 @@ func main() {
 	// API routes
 	api := r.Group("/api")
 	{
-		api.GET("/index", server.getIndex)
-		api.POST("/index/rebuild", server.rebuildIndex)
-		api.GET("/browse/*path", server.browsePath)
-		api.GET("/download/*path", server.downloadFile)
-		api.POST("/upload/*path", server.uploadFile)
-		api.PUT("/rename/*path", server.renameFile)
-		api.DELETE("/delete/*path", server.deleteFile)
-		api.POST("/mkdir/*path", server.createDirectory)
+		// Auth routes (no authentication required)
+		api.POST("/login", server.login)
+		
+		// Protected routes (authentication required)
+		protected := api.Group("/")
+		protected.Use(server.authMiddleware())
+		{
+			protected.GET("/index", server.getIndex)
+			protected.POST("/index/rebuild", server.rebuildIndex)
+			protected.GET("/browse/*path", server.browsePath)
+			protected.GET("/download/*path", server.downloadFile)
+			protected.POST("/upload/*path", server.uploadFile)
+			protected.PUT("/rename/*path", server.renameFile)
+			protected.DELETE("/delete/*path", server.deleteFile)
+			protected.POST("/mkdir/*path", server.createDirectory)
+			
+			// User management routes (admin only)
+			protected.POST("/users", server.requireAdmin(), server.createUser)
+			protected.GET("/users", server.requireAdmin(), server.getUsers)
+			protected.DELETE("/users/:id", server.requireAdmin(), server.deleteUser)
+			protected.GET("/me", server.getCurrentUser)
+		}
 	}
 
 	// Catch-all route for React Router
@@ -405,4 +477,230 @@ func (s *Server) createDirectory(c *gin.Context) {
 	go s.buildIndex()
 
 	c.JSON(http.StatusOK, gin.H{"message": "Directory created successfully"})
+}
+
+// Authentication utility functions
+func (s *Server) createDefaultAdmin() {
+	var count int64
+	s.DB.Model(&User{}).Count(&count)
+	
+	if count == 0 {
+		adminPassword := os.Getenv("ADMIN_PASSWORD")
+		if adminPassword == "" {
+			adminPassword = "admin123"
+			log.Println("Warning: Using default admin password 'admin123'. Set ADMIN_PASSWORD environment variable.")
+		}
+		
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
+		if err != nil {
+			log.Fatal("Failed to hash admin password:", err)
+		}
+		
+		admin := User{
+			Username: "admin",
+			Password: string(hashedPassword),
+			IsAdmin:  true,
+		}
+		
+		result := s.DB.Create(&admin)
+		if result.Error != nil {
+			log.Fatal("Failed to create admin user:", result.Error)
+		}
+		
+		log.Println("Created default admin user (username: admin)")
+	}
+}
+
+func (s *Server) generateToken(user *User) (string, error) {
+	claims := Claims{
+		UserID:   user.ID,
+		Username: user.Username,
+		IsAdmin:  user.IsAdmin,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.JWTKey)
+}
+
+func (s *Server) authMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenString := c.GetHeader("Authorization")
+		if tokenString == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+			c.Abort()
+			return
+		}
+		
+		// Remove "Bearer " prefix if present
+		if strings.HasPrefix(tokenString, "Bearer ") {
+			tokenString = tokenString[7:]
+		}
+		
+		claims := &Claims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			return s.JWTKey, nil
+		})
+		
+		if err != nil || !token.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			c.Abort()
+			return
+		}
+		
+		c.Set("user", claims)
+		c.Next()
+	}
+}
+
+func (s *Server) requireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, exists := c.Get("user")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+			c.Abort()
+			return
+		}
+		
+		claims, ok := user.(*Claims)
+		if !ok || !claims.IsAdmin {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+			c.Abort()
+			return
+		}
+		
+		c.Next()
+	}
+}
+
+// Authentication handlers
+func (s *Server) login(c *gin.Context) {
+	var req LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	
+	var user User
+	result := s.DB.Where("username = ?", req.Username).First(&user)
+	if result.Error != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		return
+	}
+	
+	err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		return
+	}
+	
+	token, err := s.generateToken(&user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"token": token,
+		"user": gin.H{
+			"id":       user.ID,
+			"username": user.Username,
+			"isAdmin":  user.IsAdmin,
+		},
+	})
+}
+
+func (s *Server) getCurrentUser(c *gin.Context) {
+	user, _ := c.Get("user")
+	claims := user.(*Claims)
+	
+	c.JSON(http.StatusOK, gin.H{
+		"id":       claims.UserID,
+		"username": claims.Username,
+		"isAdmin":  claims.IsAdmin,
+	})
+}
+
+func (s *Server) createUser(c *gin.Context) {
+	var req CreateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		return
+	}
+	
+	user := User{
+		Username: req.Username,
+		Password: string(hashedPassword),
+		IsAdmin:  req.IsAdmin,
+	}
+	
+	result := s.DB.Create(&user)
+	if result.Error != nil {
+		if strings.Contains(result.Error.Error(), "UNIQUE constraint failed") {
+			c.JSON(http.StatusConflict, gin.H{"error": "Username already exists"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+		}
+		return
+	}
+	
+	c.JSON(http.StatusCreated, gin.H{
+		"id":       user.ID,
+		"username": user.Username,
+		"isAdmin":  user.IsAdmin,
+		"createdAt": user.CreatedAt,
+	})
+}
+
+func (s *Server) getUsers(c *gin.Context) {
+	var users []User
+	result := s.DB.Find(&users)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, users)
+}
+
+func (s *Server) deleteUser(c *gin.Context) {
+	userID := c.Param("id")
+	id, err := strconv.ParseUint(userID, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+	
+	// Prevent deleting the last admin user
+	var adminCount int64
+	s.DB.Model(&User{}).Where("is_admin = ?", true).Count(&adminCount)
+	
+	var user User
+	result := s.DB.First(&user, id)
+	if result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+	
+	if user.IsAdmin && adminCount <= 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot delete the last admin user"})
+		return
+	}
+	
+	result = s.DB.Delete(&user)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
 }

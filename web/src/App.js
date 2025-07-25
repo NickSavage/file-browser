@@ -2,10 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import FileBrowser from './components/FileBrowser';
 import Header from './components/Header';
+import Login from './components/Login';
+import UserManagement from './components/UserManagement';
+import ProtectedRoute from './components/ProtectedRoute';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 
-function App() {
+const AuthenticatedApp = () => {
   const [index, setIndex] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { apiRequest } = useAuth();
 
   useEffect(() => {
     fetchIndex();
@@ -13,7 +18,7 @@ function App() {
 
   const fetchIndex = async () => {
     try {
-      const response = await fetch('/api/index');
+      const response = await apiRequest('/api/index');
       const data = await response.json();
       setIndex(data);
     } catch (error) {
@@ -25,7 +30,7 @@ function App() {
 
   const rebuildIndex = async () => {
     try {
-      await fetch('/api/index/rebuild', { method: 'POST' });
+      await apiRequest('/api/index/rebuild', { method: 'POST' });
       await fetchIndex();
     } catch (error) {
       console.error('Failed to rebuild index:', error);
@@ -44,17 +49,43 @@ function App() {
   }
 
   return (
-    <Router>
-      <div className="min-h-screen bg-gray-50">
-        <Header index={index} onRebuildIndex={rebuildIndex} />
-        <main className="container mx-auto px-4 py-6">
-          <Routes>
-            <Route path="/browse/*" element={<FileBrowser />} />
-            <Route path="/" element={<Navigate to="/browse/" replace />} />
-          </Routes>
-        </main>
-      </div>
-    </Router>
+    <div className="min-h-screen bg-gray-50">
+      <Header index={index} onRebuildIndex={rebuildIndex} />
+      <main className="container mx-auto px-4 py-6">
+        <Routes>
+          <Route 
+            path="/browse/*" 
+            element={
+              <ProtectedRoute>
+                <FileBrowser />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/users" 
+            element={
+              <ProtectedRoute requireAdmin={true}>
+                <UserManagement />
+              </ProtectedRoute>
+            } 
+          />
+          <Route path="/" element={<Navigate to="/browse/" replace />} />
+        </Routes>
+      </main>
+    </div>
+  );
+};
+
+function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/*" element={<AuthenticatedApp />} />
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
 }
 

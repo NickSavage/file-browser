@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Upload, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 const FileUpload = ({ path, onClose, onUploadComplete }) => {
+  const { apiRequest } = useAuth();
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadResults, setUploadResults] = useState([]);
@@ -36,9 +38,10 @@ const FileUpload = ({ path, onClose, onUploadComplete }) => {
       formData.append('file', file);
 
       try {
-        const response = await fetch(`/api/upload/${path}`, {
+        const response = await apiRequest(`/api/upload/${path}`, {
           method: 'POST',
           body: formData,
+          headers: {}, // Don't set Content-Type for FormData
         });
 
         if (response.ok) {

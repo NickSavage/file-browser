@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import { 
   FolderOpen, 
   File, 
@@ -22,6 +23,7 @@ import SearchBar from './SearchBar';
 const FileBrowser = () => {
   const { '*': currentPath } = useParams();
   const navigate = useNavigate();
+  const { apiRequest } = useAuth();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('list');
@@ -37,7 +39,7 @@ const FileBrowser = () => {
   const fetchFiles = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/browse/${path}`);
+      const response = await apiRequest(`/api/browse/${path}`);
       const data = await response.json();
       setFiles(data.files || []);
     } catch (error) {
@@ -58,17 +60,17 @@ const FileBrowser = () => {
       
       switch (action) {
         case 'delete':
-          response = await fetch(`/api/delete/${filePath}`, { method: 'DELETE' });
+          response = await apiRequest(`/api/delete/${filePath}`, { method: 'DELETE' });
           break;
         case 'rename':
-          response = await fetch(`/api/rename/${filePath}`, {
+          response = await apiRequest(`/api/rename/${filePath}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ newName: data.newName })
           });
           break;
         case 'mkdir':
-          response = await fetch(`/api/mkdir/${path}`, {
+          response = await apiRequest(`/api/mkdir/${path}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: data.name })

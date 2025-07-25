@@ -7,10 +7,14 @@ services:
       - "8080:8080"
     volumes:
       # Mount your directory here - change /path/to/your/files to your actual directory
-      - /Users/nick:/data:ro
+      - /Users/nick/Documents:/data:ro
+      # Database volume to persist user data
+      - ./filebrowser.db:/root/filebrowser.db
     environment:
       - SERVE_DIR=/data
       - PORT=8080
+      - JWT_SECRET=your-secret-key-change-in-production
+      - ADMIN_PASSWORD=admin123
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
