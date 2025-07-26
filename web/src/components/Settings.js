@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { Settings as SettingsIcon, Users, RefreshCw, Shield, ArrowLeft, Home } from 'lucide-react';
+import { Settings as SettingsIcon, Users, RefreshCw, Shield, ArrowLeft, Home, Key } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import UserManagement from './UserManagement';
 import { useAuth } from '../contexts/AuthContext';
 
 const Settings = () => {
-  const [activeTab, setActiveTab] = useState('users');
+  const [activeTab, setActiveTab] = useState('profile');
   const [rebuildLoading, setRebuildLoading] = useState(false);
-  const { apiRequest } = useAuth();
+  const { apiRequest, isAdmin } = useAuth();
 
   const rebuildIndex = async () => {
     setRebuildLoading(true);
@@ -22,10 +22,13 @@ const Settings = () => {
     }
   };
 
-  const tabs = [
-    { id: 'users', label: 'User Management', icon: Users },
-    { id: 'system', label: 'System', icon: SettingsIcon },
+  const allTabs = [
+    { id: 'profile', label: 'Profile', icon: Key },
+    { id: 'users', label: 'User Management', icon: Users, adminOnly: true },
+    { id: 'system', label: 'System', icon: SettingsIcon, adminOnly: true },
   ];
+
+  const tabs = allTabs.filter(tab => !tab.adminOnly || isAdmin);
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -80,6 +83,12 @@ const Settings = () => {
 
           {/* Tab Content */}
           <div className="mt-6">
+            {activeTab === 'profile' && (
+              <div>
+                <PasswordChangeForm />
+              </div>
+            )}
+
             {activeTab === 'users' && (
               <div>
                 <UserManagement />
@@ -135,6 +144,165 @@ const Settings = () => {
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+};
+
+const PasswordChangeForm = () => {
+  const [formData, setFormData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const { apiRequest, user } = useAuth();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setSuccess('');
+
+    if (formData.newPassword !== formData.confirmPassword) {
+      setError('New passwords do not match');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const response = await apiRequest('/api/me/password', {
+        method: 'PUT',
+        body: JSON.stringify({
+          currentPassword: formData.currentPassword,
+          newPassword: formData.newPassword,
+        }),
+      });
+
+      if (response.ok) {
+        setSuccess('Password changed successfully!');
+        setFormData({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: '',
+        });
+      } else {
+        const errorData = await response.json();
+        setError(errorData.error || 'Failed to change password');
+      }
+    } catch (error) {
+      setError('Network error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+    // Clear messages when user starts typing
+    if (error) setError('');
+    if (success) setSuccess('');
+  };
+
+  return (
+    <div className="bg-white shadow rounded-lg">
+      <div className="px-4 py-5 sm:p-6">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Change Password</h3>
+        <div className="mb-4">
+          <p className="text-sm text-gray-600">
+            <strong>Username:</strong> {user?.username}
+          </p>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
+          <div>
+            <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700">
+              Current Password
+            </label>
+            <input
+              type="password"
+              id="currentPassword"
+              name="currentPassword"
+              required
+              className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              value={formData.currentPassword}
+              onChange={handleChange}
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700">
+              New Password
+            </label>
+            <input
+              type="password"
+              id="newPassword"
+              name="newPassword"
+              required
+              minLength={6}
+              className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              value={formData.newPassword}
+              onChange={handleChange}
+              disabled={loading}
+            />
+            <p className="mt-1 text-xs text-gray-500">Minimum 6 characters</p>
+          </div>
+
+          <div>
+            <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
+              Confirm New Password
+            </label>
+            <input
+              type="password"
+              id="confirmPassword"
+              name="confirmPassword"
+              required
+              minLength={6}
+              className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              disabled={loading}
+            />
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded text-sm">
+              {success}
+            </div>
+          )}
+
+          <div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Changing Password...
+                </>
+              ) : (
+                <>
+                  <Key className="h-4 w-4 mr-2" />
+                  Change Password
+                </>
+              )}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

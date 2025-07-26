@@ -8,13 +8,14 @@ services:
     volumes:
       # Mount your directory here - change /path/to/your/files to your actual directory
       - /path/to/your/files:/data:ro
-      # Database volume to persist user data
-      - ./filebrowser.db:/root/filebrowser.db
+      # Database directory to persist user data
+      - ./db:/root/db
     environment:
       - SERVE_DIR=/data
       - PORT=8080
       - JWT_SECRET=${JWT_SECRET:-change-this-in-production}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - DB_PATH=/root/db/filebrowser.db
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]

@@ -52,15 +52,13 @@ const Header = ({ index }) => {
             )}
             
             <div className="flex items-center space-x-4">
-              {isAdmin && (
-                <Link
-                  to="/settings"
-                  className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-                >
-                  <Settings className="w-4 h-4" />
-                  <span>Settings</span>
-                </Link>
-              )}
+              <Link
+                to="/settings"
+                className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                <Settings className="w-4 h-4" />
+                <span>Settings</span>
+              </Link>
 
               <div className="flex items-center space-x-2 text-sm text-gray-600">
                 <User className="w-4 h-4" />

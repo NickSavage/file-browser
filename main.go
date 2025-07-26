@@ -39,6 +39,11 @@ type CreateUserRequest struct {
 	IsAdmin  bool   `json:"isAdmin"`
 }
 
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword" binding:"required"`
+	NewPassword     string `json:"newPassword" binding:"required,min=6"`
+}
+
 type Claims struct {
 	UserID   uint   `json:"userId"`
 	Username string `json:"username"`
@@ -80,7 +85,21 @@ func main() {
 	}
 
 	// Initialize database
-	db, err := gorm.Open(sqlite.Open("filebrowser.db"), &gorm.Config{})
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "filebrowser.db"
+	}
+	
+	// Ensure database directory exists
+	dbDir := filepath.Dir(dbPath)
+	if dbDir != "." {
+		err := os.MkdirAll(dbDir, 0755)
+		if err != nil {
+			log.Fatal("Failed to create database directory:", err)
+		}
+	}
+	
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
@@ -152,6 +171,7 @@ func main() {
 			protected.GET("/users", server.requireAdmin(), server.getUsers)
 			protected.DELETE("/users/:id", server.requireAdmin(), server.deleteUser)
 			protected.GET("/me", server.getCurrentUser)
+			protected.PUT("/me/password", server.changePassword)
 		}
 	}
 
@@ -703,4 +723,46 @@ func (s *Server) deleteUser(c *gin.Context) {
 	}
 	
 	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
+}
+
+func (s *Server) changePassword(c *gin.Context) {
+	user, _ := c.Get("user")
+	claims := user.(*Claims)
+	
+	var req ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	
+	// Get current user from database
+	var currentUser User
+	result := s.DB.First(&currentUser, claims.UserID)
+	if result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+	
+	// Verify current password
+	err := bcrypt.CompareHashAndPassword([]byte(currentUser.Password), []byte(req.CurrentPassword))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Current password is incorrect"})
+		return
+	}
+	
+	// Hash new password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash new password"})
+		return
+	}
+	
+	// Update password in database
+	result = s.DB.Model(&currentUser).Update("password", string(hashedPassword))
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
 }

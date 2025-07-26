@@ -56,7 +56,7 @@ const AuthenticatedApp = () => {
           <Route 
             path="/settings" 
             element={
-              <ProtectedRoute requireAdmin={true}>
+              <ProtectedRoute>
                 <Settings />
               </ProtectedRoute>
             } 
