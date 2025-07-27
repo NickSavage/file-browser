@@ -42,7 +42,7 @@ const Header = ({ index }) => {
                 </div>
                 <div className="flex items-center space-x-1">
                   <FolderOpen className="w-4 h-4" />
-                  <span>{index.directories.length.toLocaleString()} folders</span>
+                  <span>{index.totalDirs.toLocaleString()} folders</span>
                 </div>
                 <div className="flex items-center space-x-1">
                   <HardDrive className="w-4 h-4" />

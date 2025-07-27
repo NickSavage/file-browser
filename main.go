@@ -64,10 +64,9 @@ type FileInfo struct {
 }
 
 type FileIndex struct {
-	Files       []FileInfo    `json:"files"`
-	Directories []FileInfo    `json:"directories"`
 	LastIndexed time.Time     `json:"lastIndexed"`
 	TotalFiles  int           `json:"totalFiles"`
+	TotalDirs   int           `json:"totalDirs"`
 	TotalSize   int64         `json:"totalSize"`
 }
 
@@ -126,10 +125,10 @@ func main() {
 	// Create default admin user if none exists
 	server.createDefaultAdmin()
 
-	// Build initial index
-	log.Printf("Indexing directory: %s", serveDir)
-	server.buildIndex()
-	log.Printf("Indexed %d files and %d directories", len(server.Index.Files), len(server.Index.Directories))
+	// Build initial stats
+	log.Printf("Building stats for directory: %s", serveDir)
+	server.buildStats()
+	log.Printf("Found %d files and %d directories", server.Index.TotalFiles, server.Index.TotalDirs)
 
 	r := gin.Default()
 
@@ -252,10 +251,8 @@ func getFileInfo(path string, name string, relativePath string) (FileInfo, error
 	return fileInfo, nil
 }
 
-func (s *Server) buildIndex() {
+func (s *Server) buildStats() {
 	index := &FileIndex{
-		Files:       make([]FileInfo, 0),
-		Directories: make([]FileInfo, 0),
 		LastIndexed: time.Now(),
 	}
 
@@ -275,9 +272,9 @@ func (s *Server) buildIndex() {
 		}
 
 		if fileInfo.IsDir {
-			index.Directories = append(index.Directories, fileInfo)
+			index.TotalDirs++
 		} else {
-			index.Files = append(index.Files, fileInfo)
+			index.TotalFiles++
 			index.TotalSize += fileInfo.Size
 		}
 
@@ -285,10 +282,9 @@ func (s *Server) buildIndex() {
 	})
 
 	if err != nil {
-		log.Printf("Error building index: %v", err)
+		log.Printf("Error building stats: %v", err)
 	}
 
-	index.TotalFiles = len(index.Files)
 	s.Index = index
 }
 
@@ -297,7 +293,7 @@ func (s *Server) getIndex(c *gin.Context) {
 }
 
 func (s *Server) rebuildIndex(c *gin.Context) {
-	s.buildIndex()
+	s.buildStats()
 	c.JSON(http.StatusOK, gin.H{"message": "Index rebuilt successfully"})
 }
 
@@ -413,8 +409,8 @@ func (s *Server) uploadFile(c *gin.Context) {
 		return
 	}
 
-	// Rebuild index after upload
-	go s.buildIndex()
+	// Rebuild stats after upload
+	go s.buildStats()
 
 	c.JSON(http.StatusOK, gin.H{"message": "File uploaded successfully"})
 }
@@ -443,8 +439,8 @@ func (s *Server) renameFile(c *gin.Context) {
 		return
 	}
 
-	// Rebuild index after rename
-	go s.buildIndex()
+	// Rebuild stats after rename
+	go s.buildStats()
 
 	c.JSON(http.StatusOK, gin.H{"message": "File renamed successfully"})
 }
@@ -463,8 +459,8 @@ func (s *Server) deleteFile(c *gin.Context) {
 		return
 	}
 
-	// Rebuild index after delete
-	go s.buildIndex()
+	// Rebuild stats after delete
+	go s.buildStats()
 
 	c.JSON(http.StatusOK, gin.H{"message": "File deleted successfully"})
 }
@@ -493,8 +489,8 @@ func (s *Server) createDirectory(c *gin.Context) {
 		return
 	}
 
-	// Rebuild index after directory creation
-	go s.buildIndex()
+	// Rebuild stats after directory creation
+	go s.buildStats()
 
 	c.JSON(http.StatusOK, gin.H{"message": "Directory created successfully"})
 }
